@@ -1,0 +1,55 @@
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/container"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:context=".MainActivity"
+    tools:ignore="MergeRootFrame"
+    android:background="#73035f" >
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:id="@+id/scrollView" >
+
+        <LinearLayout
+            android:orientation="vertical"
+            android:layout_width="fill_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal|top"
+            android:id="@+id/MainLayout"
+            android:gravity="fill_vertical">
+
+            <TextView
+                android:layout_width="fill_parent"
+                android:layout_height="72dp"
+                android:textAppearance="?android:attr/textAppearanceLarge"
+                android:text="0:00:00"
+                android:id="@+id/status"
+                android:layout_gravity="center_horizontal|top"
+                android:textColor="#03ffec"
+                android:textSize="62dp"
+                android:textStyle="bold"
+                android:gravity="center_horizontal" />
+
+            <Button
+                android:layout_width="match_parent"
+                android:layout_height="83dp"
+                android:text="@string/add_btn_text"
+                android:id="@+id/button"
+                android:layout_gravity="center"
+                android:onClick="addInterval" />
+
+            <Button
+                android:layout_width="fill_parent"
+                android:layout_height="87dp"
+                android:text="Start"
+                android:id="@+id/startBtn"
+                android:layout_gravity="center_horizontal|bottom"
+                android:focusableInTouchMode="false"
+                android:onClick="start" />
+
+        </LinearLayout>
+    </ScrollView>
+
+</FrameLayout>
