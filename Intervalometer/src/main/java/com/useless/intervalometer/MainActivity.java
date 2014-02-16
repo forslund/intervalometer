@@ -1,7 +1,13 @@
 package com.useless.intervalometer;
 
+import android.app.Service;
+import android.content.ComponentName;
+import android.content.Context;
+import android.content.Intent;
+import android.content.ServiceConnection;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.IBinder;
 import android.support.v4.app.Fragment;
 import android.support.v7.app.ActionBarActivity;
 import android.view.LayoutInflater;
@@ -24,56 +30,64 @@ public class MainActivity extends ActionBarActivity {
 
     private TextView timerTextView;
     private Button b;
-
     private List<IntervalEntry> intervals;
 
+    intervalService iService;
+    boolean iBound;
+    /** Defines callbacks for service binding, passed to bindService() */
+    private ServiceConnection mConnection = new ServiceConnection() {
 
-    MediaPlayer mp;
-    //Interval timing
-    private long nextInterval = 0;
-    private int current = 0;
-    private long startTime = 0;
-    long millis;
-    //runs without a timer by reposting this handler at the end of the runnable
+        @Override
+        public void onServiceConnected(ComponentName className,
+                                       IBinder service) {
+            Log.i("intervalometer", "service Connected!");
+            // We've bound to LocalService, cast the IBinder and get LocalService instance
+            intervalService.LocalBinder binder = (intervalService.LocalBinder) service;
+            iService = binder.getService();
+            iBound = true;
+        }
+
+        @Override
+        public void onServiceDisconnected(ComponentName arg0) {
+            iBound = false;
+            Log.i("intervalometer", "service Disconnected!");
+        }
+    };
+
+    int lastCurrent;
     Handler timerHandler = new Handler();
     Runnable timerRunnable = new Runnable() {
         @Override
         public void run() {
-            millis = System.currentTimeMillis() - startTime;
 
-            if (millis > nextInterval)
-            {
-                int last = current - 1;
-                if (last < 0)
-                    last = intervals.size() - 1;
-                Log.i("Intervalometer", "unmarking " + last);
-                intervals.get(last).unmark();
-                Log.i("Intervalometer", "marking " + current);
-                intervals.get(current).mark();
-
-                mp.start();
-                Log.i("Intervalometer", "Interval Reached!");
-                nextInterval += intervals.get(current++).getInterval();
-                if (current >= intervals.size())
-                    current = 0;
-
-            }
+            long millis = iService.getMillis();
             int seconds = (int) (millis / 1000);
             int minutes = seconds / 60;
             int hundredths = (int) (millis / 10) % 100;
             seconds = seconds % 60;
 
             timerTextView.setText(String.format("%d:%02d:%02d", minutes, seconds, hundredths));
+            int current = iService.getCurrent();
+            if (current != lastCurrent) {
 
+                int last = current - 1;
+                if (last < 0)
+                    last = intervals.size() - 1;
+                intervals.get(current).mark();
+                intervals.get(last).unmark();
+            }
             timerHandler.postDelayed(this, 250);
         }
     };
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        LinearLayout l;
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
         this.isStarted = false;
+        this.intervals = new ArrayList<IntervalEntry>();
+
         this.timerTextView = (TextView) findViewById(R.id.status);
         this.b =  (Button) findViewById(R.id.startBtn);
         if (savedInstanceState == null) {
@@ -81,30 +95,37 @@ public class MainActivity extends ActionBarActivity {
                     .add(R.id.container, new PlaceholderFragment())
                     .commit();
         }
-
-        // setup interval entries
-        this.intervals = new ArrayList<IntervalEntry>();
-
-        this.mp =  MediaPlayer.create(this, R.raw.tardisesque);
+        l = (LinearLayout) findViewById(R.id.MainLayout);
+        Intent i = new Intent(getBaseContext(), intervalService.class);
+        bindService(i, mConnection, Context.BIND_AUTO_CREATE);
     }
 
     public void start(View v)
     {
-
         if (this.isStarted) {
+            iService.stop();
             this.isStarted = false;
-            timerHandler.removeCallbacks(timerRunnable);
             b.setText("Start");
+            timerHandler.removeCallbacks(timerRunnable);
+            // Unmark any marked field
+            for (int i = 0; i < intervals.size(); i++)
+                intervals.get(i).unmark();
         }
         else {
-            this.isStarted = true;
-            startTime = System.currentTimeMillis();
-            this.current = 0;
-            intervals.get(this.current).mark();
-            this.nextInterval = intervals.get(this.current++).getInterval();
-            timerHandler.postDelayed(timerRunnable, 0);
-            b.setText("Stop");
+            List<Long> intervalTimeList = new ArrayList<Long>(intervals.size());
+            for (int i = 0; i < intervals.size(); i++)
+                intervalTimeList.add(i,intervals.get(i).getInterval());
+            if (iService.start(intervalTimeList))
+            {
+                intervals.get(0).mark();
+                lastCurrent = 0;
+                this.isStarted = true;
+
+                b.setText("Stop");
+                timerHandler.postDelayed(timerRunnable, 0);
+            }
         }
+
     }
 
     public void addInterval(View v)
@@ -115,7 +136,7 @@ public class MainActivity extends ActionBarActivity {
         l = (LinearLayout) findViewById(R.id.MainLayout);
 
         i = new IntervalEntry(l.getContext());
-        this.intervals.add(i);
+        intervals.add(i);
         l.addView(i);
     }
     @Override
@@ -127,46 +148,36 @@ public class MainActivity extends ActionBarActivity {
     }
     @Override
     protected void onSaveInstanceState(Bundle outState) {
-        int i;
         super.onSaveInstanceState(outState);
+        Log.i("intervalometer", "saving Instance State");
+        outState.putBoolean("started", isStarted);
+        timerHandler.removeCallbacks(timerRunnable);
 
         long[] times = new long[intervals.size()];
-        for (i = 0; i < intervals.size(); i++)
+        for (int i = 0; i < intervals.size(); i++)
             times[i] = (this.intervals.get(i).getInterval());
         outState.putLongArray("intervals", times);
-
-        outState.putBoolean("started", isStarted);
-        outState.putLong("timer", millis);
-        outState.putLong("timerStart", startTime);
-        outState.putLong("timerNext", nextInterval);
-        outState.putInt("currentInterval", current);
-        timerHandler.removeCallbacks(timerRunnable);
     }
 
     @Override
     protected void onRestoreInstanceState(Bundle inState) {
-        LinearLayout l = (LinearLayout) findViewById(R.id.MainLayout);
-        int i;
         long[] times = inState.getLongArray("intervals");
+        LinearLayout l = (LinearLayout) findViewById(R.id.MainLayout);
         super.onRestoreInstanceState(inState);
-        isStarted = inState.getBoolean("started");
-        startTime = inState.getLong("timerStart");
-        millis = inState.getLong("timer");
-        nextInterval = inState.getLong("timerNext");
-        current = inState.getInt("currentInterval");
-        if (current >= intervals.size())
-            current = 0;
-        for (i = 0; i < times.length; i++)
+        for (int i = 0; i < times.length; i++)
         {
             IntervalEntry ie = new IntervalEntry(l.getContext());
             ie.setInterval(times[i]);
             l.addView(ie);
             intervals.add(ie);
         }
+
+        isStarted = inState.getBoolean("started");
+        Log.i("intervalometer", "restoring Instance State");
+
         if (isStarted) {
             timerHandler.postDelayed(timerRunnable, 0);
             b.setText("Stop");
-            intervals.get(current).mark();
         }
 
 
